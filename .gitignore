@@ -1,3 +1,7 @@
 notebooks
 *_env
 local.*
+
+*.png
+*.csv
+*.pdf
