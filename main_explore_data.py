@@ -4,6 +4,7 @@ import os
 from matplotlib import pyplot as plt 
 import seaborn as sns
 import pdb
+import networkx as nx
 
 def load_csv(filename='building_data.csv'):
     df = pd.read_csv(filename)
@@ -103,7 +104,6 @@ def main():
     
     pdb.set_trace()
 
-
 def plot_pngs():
     df_col = load_csv()
     col_names = df_col.columns
@@ -117,5 +117,39 @@ def plot_pngs():
         plt.savefig(f'{column.replace(" ", "")}.png')
         plt.close()
 
+def explore_graph():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+
+    graph = nx.read_gml('brick-graph.gml')
+
+    print('========= LEVEL 1 ======================')
+
+    for i in range(1, len(df_massflow.columns)):
+        sanitized_name = df_massflow.columns[i][:-33].upper()
+        print(f'For node: {sanitized_name}')
+        print(f'Below: {graph[sanitized_name]}')
+        print(f'Above: {graph.pred[sanitized_name]}')
+
+    print('========= LEVEL 2 ======================')
+
+    for i in range(1, len(df_damper.columns)):
+        sanitized_name = df_damper.columns[i][:-40].upper()
+        print(f'For node: {sanitized_name}')
+        print(f'Below: {graph[sanitized_name]}')
+        print(f'Above: {graph.pred[sanitized_name]}')
+
+    print('========= LEVEL 3 ======================')
+
+    for i in range(1, len(df_flow.columns)):
+        sanitized_name = df_flow.columns[i][:-49].upper()
+        print(f'For node: {sanitized_name}')
+        print(f'Below: {graph[sanitized_name]}')
+        print(f'Above: {graph.pred[sanitized_name]}')
+
+    pdb.set_trace()
+
 if __name__ == '__main__':
-    airflowplots()
+    explore_graph()
