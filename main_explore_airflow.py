@@ -117,11 +117,81 @@ def plot_pngs():
         plt.savefig(f'{column.replace(" ", "")}.png')
         plt.close()
 
+def explore_damper():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+
+    for i in range(1, len(df_flow.columns)):
+        sanitized_name = df_flow.columns[i][:-49].upper()
+        plt.plot(df_flow.iloc[open_idx, i])
+        plt.savefig(f'flow-{sanitized_name}.png')
+        plt.close()
+        pdb.set_trace()
+
+    for i in range(1, len(df_damper.columns)):
+        sanitized_name = df_damper.columns[i][:-40].upper()
+        plt.plot(df_damper.iloc[open_idx, i])
+        plt.savefig(f'damper-{sanitized_name}.png')
+        plt.close()
+        pdb.set_trace()
+
+def explore_flow_sums():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+
+    flow_top = dict()
+    flow_mid = dict()
+    flow_bot = dict()
+
+    for i in range(1, len(df_flow.columns)):
+        sanitized_name = df_flow.columns[i][:-49].upper()
+
+        if 'TOP' in sanitized_name:
+            flow_top[sanitized_name] = df_flow.iloc[:,i].values
+        if 'MID' in sanitized_name:
+            flow_mid[sanitized_name] = df_flow.iloc[:,i].values
+        if 'BOT' in sanitized_name:
+            flow_bot[sanitized_name] = df_flow.iloc[:,i].values
+
+    df_flow_top = pd.DataFrame(flow_top)
+    df_flow_mid = pd.DataFrame(flow_mid)
+    df_flow_bot = pd.DataFrame(flow_bot)
+
+    pdb.set_trace()
+
+    plt.plot(np.arange(len(open_idx)), df_massflow.iloc[open_idx,1], label='Total VAV')
+    plt.plot(np.arange(len(open_idx)), np.sum(df_flow_top, axis=1)[open_idx], label='Sum of sinks')
+    plt.legend()
+    plt.savefig('total_top.png')
+    plt.close()
+
+    plt.plot(np.arange(len(open_idx)), df_massflow.iloc[open_idx,2], label='Total VAV')
+    plt.plot(np.arange(len(open_idx)), np.sum(df_flow_mid, axis=1)[open_idx], label='Sum of sinks')
+    plt.savefig('total_mid.png')
+    plt.close()
+
+    plt.plot(np.arange(len(open_idx)), df_massflow.iloc[open_idx,3], label='Total VAV')
+    plt.plot(np.arange(len(open_idx)), np.sum(df_flow_bot, axis=1)[open_idx], label='Sum of sinks')
+    plt.savefig('total_bot.png')
+    plt.close()
+
+    pdb.set_trace()
+
 def explore_graph():
 
     df_massflow = load_csv('FanAirMassFlowRate.csv')
     df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
     df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
 
     graph = nx.read_gml('brick-graph.gml')
 
@@ -149,7 +219,22 @@ def explore_graph():
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
 
-    pdb.set_trace()
+def explore_pairwise_relations():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+
+    for i in range(1, len(df_flow.columns)):
+        sanitized_name = df_flow.columns[i][:-49].upper()
+        print(sanitized_name)
+
+        plt.title(sanitized_name)
+        plt.scatter(df_damper.iloc[open_idx,i], df_flow.iloc[open_idx, i])
+        plt.savefig(f'{sanitized_name}.png')
+        plt.close()
 
 if __name__ == '__main__':
-    explore_graph()
+    explore_damper()
