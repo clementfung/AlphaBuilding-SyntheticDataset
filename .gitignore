@@ -2,6 +2,7 @@ notebooks
 *_env
 local.*
 
+*.pkl
 *.png
 *.csv
 *.pdf
