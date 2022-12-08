@@ -16,6 +16,10 @@ def load_csv(filename='building_data.csv'):
     df = pd.read_csv(f'dataframes/{filename}')
     return df
 
+def load_boosted_regression(name):
+    load_obj = pickle.load(open(f'models/{name}.pkl', 'rb'))
+    return load_obj['regressor_low'], load_obj['regressor_mid'], load_obj['regressor_high']
+
 def train_boosted_regression_ci(X_train, Y_train, save_model=False, name='sample'):
 
     regressor = GradientBoostingRegressor(loss="quantile", alpha=0.5)
@@ -35,7 +39,7 @@ def train_boosted_regression_ci(X_train, Y_train, save_model=False, name='sample
             'regressor_high': regressor_high
         }
         
-        pickle.dump(save_obj, open(f'{name}.pkl', 'wb'))
+        pickle.dump(save_obj, open(f'models/{name}.pkl', 'wb'))
 
     return regressor, regressor_low, regressor_high
 
@@ -69,7 +73,6 @@ def main_massflow_model():
     # open_idx = np.where(df['Operating Time'] == 'Yes')[0]
     # X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
 
-
 def main_pairwise_models(config):
 
     df_massflow = load_csv('FanAirMassFlowRate.csv')
@@ -80,15 +83,9 @@ def main_pairwise_models(config):
 
     df = load_csv('building_data.csv')
     outside_temp = df.iloc[:, 20]
-
-    xmin = config['xmin']
-    xmax = config['xmax']
     exp_name = config['exp_name']
 
     open_idx = np.where(df['Operating Time'] == 'Yes')[0]
-    X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
-
-    #pdb.set_trace()
 
     for i in range(1, len(df_damper.columns)):
         
@@ -97,26 +94,78 @@ def main_pairwise_models(config):
             continue
         
         sanitized_name = df_damper.columns[i][:-40].upper()
-        print(sanitized_name)
 
         df_train = df_damper.iloc[open_idx,i]
         #df_train = df_occ.iloc[open_idx, i-12]
         #df_out = df_rawtemp.iloc[open_idx,i] 
-        df_out = df_rawtemp.iloc[open_idx,i] - outside_temp.iloc[open_idx]
+        df_out = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
 
         # For damper inputs: filter out closed
-        open_damper_idx = df_train > 0.201
-        df_train = df_train[open_damper_idx]
-        df_out = df_out[open_damper_idx]
+        # open_damper_idx = df_train > 0.201
+        # df_train = df_train[open_damper_idx]
+        # df_out = df_out[open_damper_idx]
 
         X_train = df_train.values.reshape(-1, 1)
         Y_train = df_out.values
 
         corr = utils.get_corr(X_train.T, Y_train)
-        print(corr)
+        print(f'{sanitized_name}: corr={corr}')
 
-        reg, reg_low, reg_high = train_boosted_regression_ci(X_train, Y_train, save_model=True, name=f'model-col{i}')
+        reg, reg_low, reg_high = train_boosted_regression_ci(X_train, Y_train, save_model=False, name=f'model-col{i}')
 
+        xmin = np.min(X_train)
+        xmax = np.max(X_train)
+        X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
+        mean_pred = reg.predict(X_space)
+        low_pred = reg_low.predict(X_space)
+        high_pred = reg_high.predict(X_space)
+
+        plt.title(f'{sanitized_name}: corr={corr:.4f}')
+        plt.scatter(df_train, df_out)
+        plt.plot(X_space, mean_pred, color='red')
+        plt.plot(X_space, low_pred, color='red')
+        plt.plot(X_space, high_pred, color='red')
+        
+        plt.close()
+
+def attack_pairwise_models(config):
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df_occ = load_csv('ZonePeopleOccupantCount.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+
+    df = load_csv('building_data.csv')
+    outside_temp = df.iloc[:, 20]
+    exp_name = config['exp_name']
+
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    attack_point = 14000
+
+    for i in range(1, len(df_damper.columns)):
+        
+        if i == 45:
+            # Skip one defective zone
+            continue
+        
+        sanitized_name = df_damper.columns[i][:-40].upper()
+        df_train = df_damper.iloc[open_idx,i]
+        df_out = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
+
+        X_train = df_train.values.reshape(-1, 1)
+        Y_train = df_out.values
+
+        pdb.set_trace()
+
+        corr = utils.get_corr(X_train.T, Y_train)
+        print(f'{sanitized_name}: corr={corr}')
+
+        reg, reg_low, reg_high = load_boosted_regression(name=f'model-col{i}')
+
+        xmin = np.min(X_train)
+        xmax = np.max(X_train)
+        X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
         mean_pred = reg.predict(X_space)
         low_pred = reg_low.predict(X_space)
         high_pred = reg_high.predict(X_space)
@@ -127,13 +176,13 @@ def main_pairwise_models(config):
         plt.plot(X_space, low_pred, color='red')
         plt.plot(X_space, high_pred, color='red')
     
-        plt.savefig(f'zone-{exp_name}-model-col{i}.png')
+        plt.scatter(X_train[attack_point], Y_train[attack_point], color='green')
+        plt.scatter(X_train[attack_point], Y_train[attack_point] * 0.5, color='green')
+        plt.show()
         plt.close()
-
 
 if __name__ == '__main__':
 
     # main_massflow_model()
+    main_pairwise_models({'exp_name': 'damper-tempdiff'})
 
-    #main_pairwise_models({'exp_name': 'damper-rawtemp', 'xmin': 0, 'xmax': 1})
-    main_pairwise_models({'exp_name': 'damper-tempdiff', 'xmin': 0.2, 'xmax': 1})

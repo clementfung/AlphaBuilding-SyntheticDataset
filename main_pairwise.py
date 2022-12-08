@@ -108,6 +108,7 @@ def explore_pairwise_relations():
         temp_diff = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
 
         corr = utils.get_corr(df_damper.iloc[open_idx,i], temp_diff)
+        print(f'{sanitized_name} col-{i}: {corr:.5f}')
 
         fig, ax = plt.subplots(1, 1)
         ax.set_title(f'{sanitized_name}: corr={corr:.3f}')
@@ -117,8 +118,35 @@ def explore_pairwise_relations():
 
         print(f'{sanitized_name} vs {temp_name}: corr={corr:.5f}')
 
+def explore_setpoints():
+
+    df_heatset = load_csv('ZoneThermostatHeatingSetpointTemperature.csv') 
+    df_coolset = load_csv('ZoneThermostatCoolingSetpointTemperature.csv') 
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    outside_temp = df.iloc[:, 20]
+
+    #for i in range(1, len(df_damper.columns)):
+    for i in range(26, 30):
+        
+        sanitized_name = df_damper.columns[i][:-40].upper()
+        temp_name = df_rawtemp.columns[i].upper()
+
+        temp_set = (df_rawtemp.iloc[:,i] - df_heatset.iloc[:,i])[open_idx]
+        corr = utils.get_corr(df_damper.iloc[open_idx,i], temp_set)
+
+        fig, ax = plt.subplots(1, 1)
+        ax.set_title(f'{sanitized_name}: corr={corr:.3f}')
+        ax.scatter(df_damper.iloc[open_idx,i], temp_set, color='black')
+        plt.show()
+        plt.close()
+
+        print(f'{sanitized_name} vs {temp_name}: corr={corr:.5f}')
+
 if __name__ == '__main__':
     
-    #explore_pairwise_relations()
     #explore_graph()
     explore_pairwise_relations()
+    explore_setpoints()

@@ -199,8 +199,124 @@ def mean_tempdiff():
 
     pdb.set_trace()
 
+def damper_tempdiff():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    outside_temp = df.iloc[:, 20]
+
+    damp_top = dict()
+    damp_mid = dict()
+    damp_bot = dict()
+    temp_top = dict()
+    temp_mid = dict()
+    temp_bot = dict()
+
+    for i in range(1, len(df_rawtemp.columns)):
+        sanitized_name = df_rawtemp.columns[i][:-40].upper()
+
+        if 'TOP' in sanitized_name:
+            damp_top[sanitized_name] = df_damper.iloc[:,i].values
+            temp_top[sanitized_name] = df_rawtemp.iloc[:,i].values
+        if 'MID' in sanitized_name:
+            damp_mid[sanitized_name] = df_damper.iloc[:,i].values
+            temp_mid[sanitized_name] = df_rawtemp.iloc[:,i].values
+        if 'BOT' in sanitized_name:
+            damp_bot[sanitized_name] = df_damper.iloc[:,i].values
+            temp_bot[sanitized_name] = df_rawtemp.iloc[:,i].values
+
+    tf_top = pd.DataFrame(temp_top)
+    tf_mid = pd.DataFrame(temp_mid)
+    tf_bot = pd.DataFrame(temp_bot)
+
+    df_top = pd.DataFrame(damp_top)
+    df_mid = pd.DataFrame(damp_mid)
+    df_bot = pd.DataFrame(damp_bot)
+
+    top_damp_normed = np.mean(df_top, axis=1)[open_idx]
+    top_temp_normed = (outside_temp - np.mean(tf_top, axis=1))[open_idx]
+
+    corr = utils.get_corr(top_damp_normed, top_temp_normed)
+    print(corr) 
+    plt.scatter(top_damp_normed, top_temp_normed)
+    # plt.scatter(top_damp_normed.iloc[attack_point], top_temp_normed.iloc[attack_point], color='green')
+    # plt.scatter(top_damp_normed.iloc[attack_point], top_temp_normed.iloc[attack_point] * 0.5, color='green')
+    plt.title(f'Top Zone: corr={corr:.5f}')
+    plt.ylabel('Temperature difference')
+    plt.xlabel('Average Damper')
+    plt.savefig('total-damper-tempdiff-top.png')
+    plt.close()
+
+    mid_damp_normed = np.mean(df_mid, axis=1)[open_idx]
+    mid_temp_normed = (outside_temp - np.mean(tf_mid, axis=1))[open_idx]
+    corr = utils.get_corr(mid_damp_normed, mid_temp_normed)
+    print(corr) 
+    plt.scatter(mid_damp_normed, mid_temp_normed)
+    plt.title(f'Mid Zone: corr={corr:.5f}')
+    plt.ylabel('Temperature difference')
+    plt.xlabel('Average Damper')
+    plt.savefig('total-damper-tempdiff-mid.png')
+    plt.close()
+
+    bot_damp_normed = np.mean(df_bot, axis=1)[open_idx]
+    bot_temp_normed = (outside_temp - np.mean(tf_bot, axis=1))[open_idx]
+    corr = utils.get_corr(bot_damp_normed, bot_temp_normed)
+    print(corr) 
+    plt.scatter(bot_damp_normed, bot_temp_normed)
+    plt.title(f'Bottom Zone: corr={corr:.5f}')
+    plt.ylabel('Temperature difference')
+    plt.xlabel('Average Damper')
+    plt.savefig('total-damper-tempdiff-bot.png')
+    plt.close()
+
+    pdb.set_trace()
+
+def damper_coupling():
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    outside_temp = df.iloc[:, 20]
+
+    damp_top = dict()
+    damp_mid = dict()
+    damp_bot = dict()
+
+    for i in range(1, len(df_rawtemp.columns)):
+        sanitized_name = df_rawtemp.columns[i][:-40].upper()
+
+        if 'TOP' in sanitized_name:
+            damp_top[sanitized_name] = df_damper.iloc[:,i].values
+        if 'MID' in sanitized_name:
+            damp_mid[sanitized_name] = df_damper.iloc[:,i].values
+        if 'BOT' in sanitized_name:
+            damp_bot[sanitized_name] = df_damper.iloc[:,i].values
+
+    df_top = pd.DataFrame(damp_top)
+    df_mid = pd.DataFrame(damp_mid)
+    df_bot = pd.DataFrame(damp_bot)
+
+    # Test each feature as support
+    is_open = df_top > 0.2001
+
+    for i in range(len(is_open.columns)):
+        support = is_open[is_open.iloc[:, i]]
+        print(f'Support for VAV column {is_open.columns[i]}: {len(support)} samples')
+        print(np.mean(support, axis=0))
+
+        pdb.set_trace()
+
+
 if __name__ == '__main__':
     
+    damper_coupling()
+
     flow_total()
     mean_damper()
     mean_tempdiff()
+    damper_tempdiff()
