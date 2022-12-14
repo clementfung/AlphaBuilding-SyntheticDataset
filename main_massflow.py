@@ -110,7 +110,7 @@ def mean_damper():
     plt.title(f'Top Zone: corr={corr:.5f}')
     plt.ylabel('Average damper')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-damper-top.png')
+    plt.savefig('total-damper-top.pdf')
     plt.close()
 
     mid_mass_normed = df_massflow.iloc[open_idx,2]
@@ -121,7 +121,7 @@ def mean_damper():
     plt.title(f'Mid Zone: corr={corr:.5f}')
     plt.ylabel('Average damper')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-damper-mid.png')
+    plt.savefig('total-damper-mid.pdf')
     plt.close()
 
     bot_mass_normed = df_massflow.iloc[open_idx,3]
@@ -132,7 +132,7 @@ def mean_damper():
     plt.title(f'Bottom Zone: corr={corr:.5f}')
     plt.ylabel('Average damper')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-damper-bot.png')
+    plt.savefig('total-damper-bot.pdf')
     plt.close()
 
     pdb.set_trace()
@@ -172,7 +172,7 @@ def mean_tempdiff():
     plt.title(f'Top Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-tempdiff-top.png')
+    plt.savefig('total-tempdiff-top.pdf')
     plt.close()
 
     mid_mass_normed = df_massflow.iloc[open_idx,2]
@@ -183,7 +183,7 @@ def mean_tempdiff():
     plt.title(f'Mid Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-tempdiff-mid.png')
+    plt.savefig('total-tempdiff-mid.pdf')
     plt.close()
 
     bot_mass_normed = df_massflow.iloc[open_idx,3]
@@ -194,7 +194,7 @@ def mean_tempdiff():
     plt.title(f'Bottom Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Zone Mass Flow')
-    plt.savefig('total-tempdiff-bot.png')
+    plt.savefig('total-tempdiff-bot.pdf')
     plt.close()
 
     pdb.set_trace()
@@ -247,7 +247,7 @@ def damper_tempdiff():
     plt.title(f'Top Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Average Damper')
-    plt.savefig('total-damper-tempdiff-top.png')
+    plt.savefig('total-damper-tempdiff-top.pdf')
     plt.close()
 
     mid_damp_normed = np.mean(df_mid, axis=1)[open_idx]
@@ -258,7 +258,7 @@ def damper_tempdiff():
     plt.title(f'Mid Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Average Damper')
-    plt.savefig('total-damper-tempdiff-mid.png')
+    plt.savefig('total-damper-tempdiff-mid.pdf')
     plt.close()
 
     bot_damp_normed = np.mean(df_bot, axis=1)[open_idx]
@@ -269,7 +269,7 @@ def damper_tempdiff():
     plt.title(f'Bottom Zone: corr={corr:.5f}')
     plt.ylabel('Temperature difference')
     plt.xlabel('Average Damper')
-    plt.savefig('total-damper-tempdiff-bot.png')
+    plt.savefig('total-damper-tempdiff-bot.pdf')
     plt.close()
 
     pdb.set_trace()
@@ -283,34 +283,40 @@ def damper_coupling():
     open_idx = np.where(df['Operating Time'] == 'Yes')[0]
     outside_temp = df.iloc[:, 20]
 
-    damp_top = dict()
-    damp_mid = dict()
-    damp_bot = dict()
+    for sub_name in ['TOP', 'MID', 'BOT']:
 
-    for i in range(1, len(df_rawtemp.columns)):
-        sanitized_name = df_rawtemp.columns[i][:-40].upper()
+        damp_sub = dict()
 
-        if 'TOP' in sanitized_name:
-            damp_top[sanitized_name] = df_damper.iloc[:,i].values
-        if 'MID' in sanitized_name:
-            damp_mid[sanitized_name] = df_damper.iloc[:,i].values
-        if 'BOT' in sanitized_name:
-            damp_bot[sanitized_name] = df_damper.iloc[:,i].values
+        for i in range(1, len(df_rawtemp.columns)):
+            sanitized_name = df_rawtemp.columns[i][:-40].upper()
 
-    df_top = pd.DataFrame(damp_top)
-    df_mid = pd.DataFrame(damp_mid)
-    df_bot = pd.DataFrame(damp_bot)
+            if sub_name in sanitized_name:
+                damp_sub[sanitized_name] = df_damper.iloc[:,i].values
 
-    # Test each feature as support
-    is_open = df_top > 0.2001
+        df_sub = pd.DataFrame(damp_sub)
 
-    for i in range(len(is_open.columns)):
-        support = is_open[is_open.iloc[:, i]]
-        print(f'Support for VAV column {is_open.columns[i]}: {len(support)} samples')
-        print(np.mean(support, axis=0))
+        # Test each feature as support
+        is_open = df_sub > 0.2001
 
-        pdb.set_trace()
+        dep_map = np.zeros((len(df_sub.columns), len(df_sub.columns)))
 
+        for i in range(len(is_open.columns)):
+            support = is_open[is_open.iloc[:, i]]
+            #print(f'Support for VAV column {is_open.columns[i]}: {len(support)} samples')
+            #print(np.mean(support, axis=0))
+
+            dep_map[i] = np.mean(support, axis=0).values > 0.995
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+        
+        ax.imshow(dep_map)
+        ax.set_yticks(np.arange(len(df_sub.columns)))
+        ax.set_yticklabels(df_sub.columns)
+        ax.set_xticks([])
+        
+        fig.tight_layout()
+        plt.savefig(f'damper-dep-{sub_name}.pdf')
+        np.save(f'DamperDep_{sub_name}.npy', dep_map)
 
 if __name__ == '__main__':
     

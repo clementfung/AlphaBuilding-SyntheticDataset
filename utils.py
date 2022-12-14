@@ -21,6 +21,14 @@ def scale_vec(vec):
     new_vec /= np.max(new_vec)
     return new_vec
 
+def get_column_idx_match(sanitized_name, columns):
+
+    for i in range(len(columns)):
+        if sanitized_name in columns[i]:
+            return i
+    return -1
+
+
 def plot_annual(column, title='Sample Title', filename='temp.pdf'):
 
     # Each row is a day, columns are hours

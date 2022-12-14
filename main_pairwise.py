@@ -65,32 +65,49 @@ def explore_graph():
     open_idx = np.where(df['Operating Time'] == 'Yes')[0]
 
     graph = nx.read_gml('brick-graph.gml')
+    node_positions = dict()
+
+    node_positions['MAIN SERVICE WATER LOOP'] = (0.5, 150)
+    node_positions['-MEDIUMOFFICEDETAILED-ASHRAE 169-2006-5A CREATED: 2020-09-29 13:02:54 -0700'] = (1.5, 150)
 
     print('========= LEVEL 1 ======================')
 
+    vpos = 0 
     for i in range(1, len(df_massflow.columns)):
         sanitized_name = df_massflow.columns[i][:-33].upper()
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
+        node_positions[sanitized_name] = (0, vpos)
+        vpos += 60
 
     print('========= LEVEL 2 ======================')
 
+    vpos = 0
     for i in range(1, len(df_damper.columns)):
         sanitized_name = df_damper.columns[i][:-40].upper()
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
+        node_positions[sanitized_name] = (1, vpos)
+        vpos += 2
 
     print('========= LEVEL 3 ======================')
 
+    vpos = 0
     for i in range(1, len(df_flow.columns)):
         sanitized_name = df_flow.columns[i][:-49].upper()
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
+        node_positions[sanitized_name] = (2, vpos)
+        vpos += 2
 
-def explore_pairwise_relations():
+    nx.draw(graph, node_positions)
+    plt.tight_layout()
+    plt.show()
+
+def explore_pairwise_damper_relations():
 
     df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
     df_rawtemp = load_csv('ZoneTemperature.csv')
@@ -114,6 +131,35 @@ def explore_pairwise_relations():
         ax.set_title(f'{sanitized_name}: corr={corr:.3f}')
         ax.scatter(df_damper.iloc[open_idx,i], temp_diff, color='black')
         plt.savefig(f'zone-damper-tempdiff-col{i}.png')
+        plt.close()
+
+        print(f'{sanitized_name} vs {temp_name}: corr={corr:.5f}')
+
+def explore_pairwise_flow_relations():
+
+    #df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    df = load_csv('building_data.csv')
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    outside_temp = df.iloc[:, 20]
+
+    # line_idx = np.where((df_damper.iloc[:,24] > 0.4) & (df_flow.iloc[:,24] > 0.03)) 
+
+    for i in range(1, len(df_flow.columns)):
+        
+        sanitized_name = df_flow.columns[i][:-49].upper()
+        temp_name = df_rawtemp.columns[i].upper()
+
+        temp_diff = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
+
+        corr = utils.get_corr(df_flow.iloc[open_idx,i], temp_diff)
+        print(f'{sanitized_name} col-{i}: {corr:.5f}')
+
+        fig, ax = plt.subplots(1, 1)
+        ax.set_title(f'{sanitized_name}: corr={corr:.3f}')
+        ax.scatter(df_flow.iloc[open_idx,i], temp_diff, color='black')
+        plt.savefig(f'zone-flow-tempdiff-col{i}.png')
         plt.close()
 
         print(f'{sanitized_name} vs {temp_name}: corr={corr:.5f}')
@@ -147,6 +193,7 @@ def explore_setpoints():
 
 if __name__ == '__main__':
     
-    #explore_graph()
-    explore_pairwise_relations()
-    explore_setpoints()
+    explore_graph()
+    explore_pairwise_damper_relations()
+    explore_pairwise_flow_relations()
+    #explore_setpoints()

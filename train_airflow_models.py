@@ -11,6 +11,8 @@ import utils
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, DotProduct, WhiteKernel
 from sklearn.ensemble import GradientBoostingRegressor
+from sklearn import tree, linear_model
+import scipy.stats as ss
 
 def load_csv(filename='building_data.csv'):
     df = pd.read_csv(f'dataframes/{filename}')
@@ -53,25 +55,53 @@ def train_gaussian_proc(X_train, Y_train):
     # mean_pred, std_pred = gp.predict(X_space, return_std=True)
     return gp
 
-def main_massflow_model():
+def process_zone_data():
 
     df_massflow = load_csv('FanAirMassFlowRate.csv')
+
     df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
     df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
     df_occ = load_csv('ZonePeopleOccupantCount.csv')
     df_rawtemp = load_csv('ZoneTemperature.csv')
+    df_heatset = load_csv('ZoneThermostatHeatingSetpointTemperature.csv')
+    df_coolset = load_csv('ZoneThermostatCoolingSetpointTemperature.csv')
 
     df = load_csv('building_data.csv')
     outside_temp = df.iloc[:, 20]
+    open_idx = np.where(df['Operating Time'] == 'Yes')[0]
 
-    pdb.set_trace()
+    df_sub = dict()
 
-    # xmin = config['xmin']
-    # xmax = config['xmax']
-    # exp_name = config['exp_name']
+    for i in range(1, len(df_occ.columns)):
 
-    # open_idx = np.where(df['Operating Time'] == 'Yes')[0]
-    # X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
+        sanitized_name = df_occ.columns[i][:-29].upper()
+        #df_sub['out_temp'] = outside_temp
+        df_sub['occ'] = df_occ.iloc[open_idx,i]
+
+        cidx = utils.get_column_idx_match(sanitized_name, df_flow.columns)
+        print(df_flow.columns[cidx])
+        df_sub['flow'] = df_flow.iloc[open_idx,cidx]
+
+        cidx = utils.get_column_idx_match(sanitized_name, df_damper.columns)
+        print(df_damper.columns[cidx])
+        df_sub['damper'] = df_damper.iloc[open_idx,cidx]
+
+        cidx = utils.get_column_idx_match(sanitized_name, df_heatset.columns)
+        print(df_heatset.columns[cidx])
+        df_sub['heatset'] = df_heatset.iloc[open_idx,cidx]
+
+        cidx = utils.get_column_idx_match(sanitized_name, df_coolset.columns)
+        print(df_flow.columns[cidx])
+        df_sub['coolset'] = df_coolset.iloc[open_idx,cidx]
+
+        cidx = utils.get_column_idx_match(sanitized_name, df_rawtemp.columns)
+        print(df_rawtemp.columns[cidx])
+        df_sub['tempdiff'] = df_rawtemp.iloc[open_idx,cidx] - outside_temp[open_idx]
+
+        df = pd.DataFrame(df_sub)
+
+        save_name = sanitized_name.replace(' ', '')
+        df.to_csv(f'{save_name}_train.csv')
 
 def main_pairwise_models(config):
 
@@ -96,8 +126,6 @@ def main_pairwise_models(config):
         sanitized_name = df_damper.columns[i][:-40].upper()
 
         df_train = df_damper.iloc[open_idx,i]
-        #df_train = df_occ.iloc[open_idx, i-12]
-        #df_out = df_rawtemp.iloc[open_idx,i] 
         df_out = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
 
         # For damper inputs: filter out closed
@@ -121,47 +149,59 @@ def main_pairwise_models(config):
         high_pred = reg_high.predict(X_space)
 
         plt.title(f'{sanitized_name}: corr={corr:.4f}')
-        plt.scatter(df_train, df_out)
-        plt.plot(X_space, mean_pred, color='red')
-        plt.plot(X_space, low_pred, color='red')
-        plt.plot(X_space, high_pred, color='red')
+        plt.scatter(df_train, df_out, color='black')
+        
+        plt.ylabel('Relative temperature difference')
+        plt.xlabel('Damper Position')
+        
+        plt.plot(X_space, mean_pred, color='green')
+        plt.plot(X_space, low_pred, color='green')
+        plt.plot(X_space, high_pred, color='green')
         
         plt.close()
 
-def attack_pairwise_models(config):
+def main_mass_models():
 
     df_massflow = load_csv('FanAirMassFlowRate.csv')
     df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
-    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
-    df_occ = load_csv('ZonePeopleOccupantCount.csv')
     df_rawtemp = load_csv('ZoneTemperature.csv')
+    df_rawtemp_atk = load_csv('ZoneTemperature_Atk.csv')
 
     df = load_csv('building_data.csv')
-    outside_temp = df.iloc[:, 20]
-    exp_name = config['exp_name']
-
     open_idx = np.where(df['Operating Time'] == 'Yes')[0]
-    attack_point = 14000
+    outside_temp = df.iloc[:, 20]
+    z_idx = 1
 
-    for i in range(1, len(df_damper.columns)):
-        
-        if i == 45:
-            # Skip one defective zone
-            continue
-        
-        sanitized_name = df_damper.columns[i][:-40].upper()
-        df_train = df_damper.iloc[open_idx,i]
-        df_out = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
+    for subname in ['TOP', 'MID', 'BOT']:
 
-        X_train = df_train.values.reshape(-1, 1)
-        Y_train = df_out.values
+        flow_top = dict()
+        temp_top = dict()
+        temp_atk = dict()
 
-        pdb.set_trace()
+        for i in range(1, len(df_damper.columns)):
+            sanitized_name = df_damper.columns[i][:-40].upper()
+
+            if subname in sanitized_name:
+                flow_top[sanitized_name] = df_damper.iloc[:,i].values
+                temp_top[sanitized_name] = df_rawtemp.iloc[:,i].values
+                temp_atk[sanitized_name] = df_rawtemp_atk.iloc[:,i].values
+
+        df_damp = pd.DataFrame(flow_top)
+        df_temp = pd.DataFrame(temp_top)
+        df_temp_atk = pd.DataFrame(temp_atk)
+
+        mass_flow = df_massflow.iloc[open_idx, z_idx]
+        damp_pts = np.mean(df_damp, axis=1)[open_idx]
+        temp_pts = (np.mean(df_temp, axis=1) - outside_temp)[open_idx]
+        temp_atk_pts = (np.mean(df_temp_atk.iloc[19930:19960], axis=1) - outside_temp[19930:19960])
+
+        X_train = damp_pts.values.reshape(-1, 1)
+        Y_train = temp_pts.values
 
         corr = utils.get_corr(X_train.T, Y_train)
-        print(f'{sanitized_name}: corr={corr}')
+        print(f'Top corr={corr}')
 
-        reg, reg_low, reg_high = load_boosted_regression(name=f'model-col{i}')
+        reg, reg_low, reg_high = train_boosted_regression_ci(X_train, Y_train, save_model=False, name=f'model-mass{i}')
 
         xmin = np.min(X_train)
         xmax = np.max(X_train)
@@ -170,19 +210,200 @@ def attack_pairwise_models(config):
         low_pred = reg_low.predict(X_space)
         high_pred = reg_high.predict(X_space)
 
-        plt.title(f'{sanitized_name}: corr={corr:.4f}')
-        plt.scatter(df_train, df_out)
-        plt.plot(X_space, mean_pred, color='red')
-        plt.plot(X_space, low_pred, color='red')
-        plt.plot(X_space, high_pred, color='red')
-    
-        plt.scatter(X_train[attack_point], Y_train[attack_point], color='green')
-        plt.scatter(X_train[attack_point], Y_train[attack_point] * 0.5, color='green')
-        plt.show()
+        plt.title(f'Aggregate {subname}: corr={corr:.5f}')
+        
+        plt.scatter(X_train, Y_train, color='black')
+        plt.scatter(np.mean(df_damp, axis=1)[19930:19960], temp_atk_pts, color='red')
+
+        plt.plot(X_space, mean_pred, color='green')
+        plt.plot(X_space, low_pred, color='green')
+        plt.plot(X_space, high_pred, color='green')
+
+        plt.ylabel('Average temperature difference')
+        plt.xlabel('Average damper position')
+        #plt.xlabel('Total PVAV flow')
+
+        #plt.show()
+        plt.savefig(f'attack-massmodel-damp-{subname}.pdf')
         plt.close()
+
+        z_idx += 1
+
+    pdb.set_trace()
+
+def main_linreg():
+
+    df_occ = load_csv('ZonePeopleOccupantCount.csv')
+
+    for i in range(1, len(df_occ.columns)):
+
+        sanitized_name = df_occ.columns[i][:-29].upper()
+        save_name = sanitized_name.replace(' ', '')
+        df_train = pd.read_csv(f'{save_name}_train.csv', index_col=0)
+        
+        X_train = df_train.iloc[:,:5].values
+        Y_train = df_train.iloc[:,5].values
+
+        X_norm = (X_train - np.mean(X_train, axis=0)) / np.std(X_train, axis=0)
+
+        clf = linear_model.LinearRegression()
+        clf = clf.fit(X_norm, Y_train)
+
+        rmse = np.sqrt(np.mean((Y_train - clf.predict(X_norm))**2))
+        print(f'{sanitized_name} train error: {rmse}')
+        
+        fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+        ax[0].plot(Y_train)
+        ax[1].plot(clf.predict(X_norm))
+        fig.tight_layout()
+        plt.savefig(f'linreg-prediction-{save_name}.pdf')
+        plt.close()
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        ax.scatter(clf.predict(X_norm), Y_train)
+        fig.tight_layout()
+        plt.savefig(f'linreg-scatter-{save_name}.pdf')
+        plt.close()
+
+def main_dtrees():
+
+    df_occ = load_csv('ZonePeopleOccupantCount.csv')
+
+    for i in range(1, len(df_occ.columns)):
+
+        sanitized_name = df_occ.columns[i][:-29].upper()
+        save_name = sanitized_name.replace(' ', '')
+        df_train = pd.read_csv(f'{save_name}_train.csv', index_col=0)
+        
+        X_train = df_train.iloc[:,:5].values
+        Y_train = df_train.iloc[:,5].values
+
+        clf = tree.DecisionTreeRegressor(max_depth=4)
+        clf = clf.fit(X_train, Y_train)
+
+        rmse = np.sqrt(np.mean((Y_train - clf.predict(X_train))**2))
+        print(f'{sanitized_name} train error: {rmse}')
+        
+        fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+        ax[0].plot(Y_train)
+        ax[1].plot(clf.predict(X_train))
+        fig.tight_layout()
+        plt.savefig(f'tree-prediction-{save_name}.pdf')
+        plt.close()
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        ax.scatter(clf.predict(X_train), Y_train)
+        fig.tight_layout()
+        plt.savefig(f'tree-scatter-{save_name}.pdf')
+        plt.close()
+
+        tree.plot_tree(clf, feature_names=df_train.columns[:6], fontsize=6)
+        plt.savefig(f'tree-struct-{save_name}.pdf')
+        plt.close()
+
+def create_attack_trace(tempdiff):
+
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    
+    ax.plot(df_rawtemp.iloc[19910:19990, 33], color='blue', lw=3, label='normal')
+    df_rawtemp.iloc[19930:19960, 1:] = df_rawtemp.iloc[19930:19960, 1:] + tempdiff
+    ax.plot(df_rawtemp.iloc[19929:19961, 33], color='red', lw=3, label='spoofed')
+    ax.set_title('Attack Region', fontsize=24)
+    ax.set_xlabel('Time', fontsize=16)
+    ax.set_ylabel('Zone Temperature', fontsize=16)
+    ax.legend()
+    plt.savefig('attack_example.pdf')
+
+    df_rawtemp.to_csv('dataframes/ZoneTemperature_Atk.csv', index=False)
+
+    pdb.set_trace()
+
+def attack_models(config):
+
+    df_massflow = load_csv('FanAirMassFlowRate.csv')
+    df_damper = load_csv('ZoneAirTerminalVAVDamperPosition.csv')
+    df_flow = load_csv('ZoneMechanicalVentilationMassFlowRate.csv')
+    df_occ = load_csv('ZonePeopleOccupantCount.csv')
+    df_rawtemp = load_csv('ZoneTemperature.csv')
+    df_rawtemp_atk = load_csv('ZoneTemperature_Atk.csv')
+
+    df = load_csv('building_data.csv')
+    outside_temp = df.iloc[:, 20]
+    exp_name = config['exp_name']
+
+    building_open_idx = np.where(df['Operating Time'] == 'Yes')[0]
+    detect_obj = np.zeros((len(df_damper.columns), 2))
+
+    for i in range(1, len(df_damper.columns)):
+        
+        if i == 45:
+            # Skip one defective zone
+            continue
+        
+        open_idx = np.where(df_damper.iloc[:,i] > 0.201)[0]
+
+        sanitized_name = df_damper.columns[i][:-40].upper()
+        save_name = sanitized_name.replace(' ', '')
+
+        df_train = df_damper.iloc[open_idx,i]
+        df_out = (df_rawtemp.iloc[:,i] - outside_temp)[open_idx]
+
+        X_train = df_train.values.reshape(-1, 1)
+        Y_train = df_out.values
+
+        corr = utils.get_corr(X_train.T, Y_train)
+        print(f'{sanitized_name}: corr={corr}')
+
+        reg_low, reg, reg_high = load_boosted_regression(name=f'model-col{i}')
+
+        xmin = np.min(X_train)
+        xmax = np.max(X_train)
+        X_space = np.linspace(start=xmin, stop=xmax, num=1_000).reshape(-1, 1) 
+        mean_pred = reg.predict(X_space)
+        low_pred = reg_low.predict(X_space)
+        high_pred = reg_high.predict(X_space)
+
+        atk_pred = reg_high.predict(df_damper.iloc[19930:19960, i].values.reshape(-1, 1))
+        atk_true = (df_rawtemp_atk.iloc[19930:19960, i] - outside_temp[19930:19960])
+        print(f'Detected: {np.sum(atk_true.values > atk_pred)} out of 30')
+
+        detect_obj[i, 0] = corr
+        detect_obj[i, 1] = np.sum(atk_true.values > atk_pred)
+
+        plt.title(f'{sanitized_name}: corr={corr:.4f}')
+        plt.scatter(df_damper.iloc[building_open_idx, i], (df_rawtemp.iloc[:,i] - outside_temp)[building_open_idx], color='black')
+        plt.plot(X_space, mean_pred, color='green')
+        plt.plot(X_space, low_pred, color='green')
+        plt.plot(X_space, high_pred, color='green')
+    
+        plt.ylabel('Relative temperature difference')
+        plt.xlabel('Damper Position')
+
+        plt.scatter(df_damper.iloc[19930:19960, i], atk_true, color='red')
+        plt.tight_layout()
+        #plt.show()
+        plt.savefig(f'attack-{save_name}.pdf')
+        plt.close()
+
+    print(f'Total detected: {np.sum(detect_obj[:, 1] > 0)}')
+    
+    pop1 = np.abs(detect_obj[np.where(detect_obj[:, 1] > 0)[0]][:,0]) 
+    pop2 = np.abs(detect_obj[np.where(detect_obj[:, 1] == 0)[0]][:,0]) 
+    stat, pval = ss.f_oneway(pop1, pop2)
+    print(f'ANOVA={stat:.3f} pval={pval:.5f}')
+
+    pdb.set_trace()
 
 if __name__ == '__main__':
 
-    # main_massflow_model()
-    main_pairwise_models({'exp_name': 'damper-tempdiff'})
+    # main_pairwise_models({'exp_name': 'damper-tempdiff'})
+    
+    create_attack_trace(tempdiff=3)
+    attack_models({'exp_name': 'damper-tempdiff'})
+    main_mass_models()
+
+    #process_zone_data()
+    # main_linreg()
 
