@@ -48,8 +48,10 @@ def main():
     df_airtemp = df.copy()
 
     df = load_csv('building_data.csv')
+   
     print(f'Plotting building data')
     plot_annual(df.iloc[:,19].values, title='Total HVAC Electricity Usage', filename='total-hvac.pdf')
+    plot_annual(df.iloc[:,20].values, title='Outside Temperature', filename='total-temp.pdf')
     plot_annual(df.iloc[:,1].values, title=df.columns[1], filename='total-occ.pdf')
     plot_annual(df.iloc[:,2].values, title=df.columns[2], filename='total-cool.pdf')
     plot_annual(df.iloc[:,5].values, title=df.columns[5], filename='total-heat.pdf')
@@ -96,4 +98,4 @@ def explore_pairwise_relations():
     pdb.set_trace()
 
 if __name__ == '__main__':
-    explore_pairwise_relations()
+    main()

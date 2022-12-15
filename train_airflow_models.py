@@ -45,16 +45,6 @@ def train_boosted_regression_ci(X_train, Y_train, save_model=False, name='sample
 
     return regressor, regressor_low, regressor_high
 
-def train_gaussian_proc(X_train, Y_train):
-
-    #kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=5, length_scale_bounds=(1e-2, 1e2))
-    kernel = ConstantKernel(1.0, constant_value_bounds="fixed") * RBF(1.0, length_scale_bounds="fixed")
-    gp = GaussianProcessRegressor(kernel=kernel, alpha=100, n_restarts_optimizer=9)
-    gp.fit(X_train, Y_train)
-
-    # mean_pred, std_pred = gp.predict(X_space, return_std=True)
-    return gp
-
 def process_zone_data():
 
     df_massflow = load_csv('FanAirMassFlowRate.csv')
@@ -65,6 +55,7 @@ def process_zone_data():
     df_rawtemp = load_csv('ZoneTemperature.csv')
     df_heatset = load_csv('ZoneThermostatHeatingSetpointTemperature.csv')
     df_coolset = load_csv('ZoneThermostatCoolingSetpointTemperature.csv')
+    df_rawtemp_atk = load_csv('ZoneTemperature_Atk.csv')
 
     df = load_csv('building_data.csv')
     outside_temp = df.iloc[:, 20]
@@ -97,6 +88,7 @@ def process_zone_data():
         cidx = utils.get_column_idx_match(sanitized_name, df_rawtemp.columns)
         print(df_rawtemp.columns[cidx])
         df_sub['tempdiff'] = df_rawtemp.iloc[open_idx,cidx] - outside_temp[open_idx]
+        df_sub['tempdiff_atk'] = df_rawtemp_atk.iloc[open_idx,cidx] - outside_temp[open_idx]
 
         df = pd.DataFrame(df_sub)
 
@@ -224,82 +216,73 @@ def main_mass_models():
         #plt.xlabel('Total PVAV flow')
 
         #plt.show()
-        plt.savefig(f'attack-massmodel-damp-{subname}.pdf')
+        plt.savefig(f'attack-massmodel-damp-{subname}.png')
         plt.close()
 
         z_idx += 1
 
     pdb.set_trace()
 
-def main_linreg():
+def main_train_dtrees():
 
     df_occ = load_csv('ZonePeopleOccupantCount.csv')
 
-    for i in range(1, len(df_occ.columns)):
+    for depth in range(2, 7):
 
-        sanitized_name = df_occ.columns[i][:-29].upper()
-        save_name = sanitized_name.replace(' ', '')
-        df_train = pd.read_csv(f'{save_name}_train.csv', index_col=0)
+        tree_errs = np.zeros((len(df_occ.columns), 3))
+
+        for i in range(1, len(df_occ.columns)):
+
+            sanitized_name = df_occ.columns[i][:-29].upper()
+            save_name = sanitized_name.replace(' ', '')
+            df_train = pd.read_csv(f'{save_name}_train.csv', index_col=0)
+
+            X_train = df_train.iloc[:,:5].values
+            Y_train = df_train.iloc[:,5].values
+
+            clf = tree.DecisionTreeRegressor(max_depth=depth)
+            clf = clf.fit(X_train, Y_train)
+
+            mse = np.sqrt(np.mean((Y_train - clf.predict(X_train))**2))
+            threshold = np.sqrt(np.quantile((Y_train - clf.predict(X_train))**2, 0.95))
+            #print(f'{sanitized_name} train error: {mse}, 95th at {threshold}')
+            
+            X_atk = df_train.iloc[7738:7768,:5].values
+            Y_atk = df_train.iloc[7738:7768,6].values
+            atk_mse = np.sqrt(np.mean((Y_atk - clf.predict(X_atk))**2))
+            #print(f'{sanitized_name} atk error: {atk_mse}')
+
+            tree_errs[i, 0] = mse
+            tree_errs[i, 1] = threshold
+            tree_errs[i, 2] = atk_mse
+
+            # fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+            # ax[0].plot(Y_train)
+            # ax[1].plot(clf.predict(X_train))
+            # fig.tight_layout()
+            # plt.savefig(f'tree-prediction-{save_name}.pdf')
+            # plt.close()
+
+            # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+            # ax.scatter(clf.predict(X_train), Y_train)
+            # fig.tight_layout()
+            # plt.savefig(f'tree-scatter-{save_name}.pdf')
+            # plt.close()
+
+            tree.plot_tree(clf, feature_names=df_train.columns[:6], fontsize=6)
+            plt.savefig(f'tree-struct-{save_name}.pdf')
+            plt.close()
+
+        print(f'Average benign error: {np.mean(tree_errs[1:,0])}')
+        print(f'Average benign threshold: {np.mean(tree_errs[1:,1])}')
+        print(f'Average attack error: {np.mean(tree_errs[1:,2])}')
         
-        X_train = df_train.iloc[:,:5].values
-        Y_train = df_train.iloc[:,5].values
+        num_higher = np.sum(tree_errs[1:,2] > tree_errs[1:,0])
+        num_caught = np.sum(tree_errs[1:,2] > tree_errs[1:,1])
+        print(f'Number caught: {num_caught} ({num_caught/(len(tree_errs)-1)}%)')
+        print(f'Number where attack is higher: {num_higher} ({num_higher/(len(tree_errs)-1)}%)')
 
-        X_norm = (X_train - np.mean(X_train, axis=0)) / np.std(X_train, axis=0)
-
-        clf = linear_model.LinearRegression()
-        clf = clf.fit(X_norm, Y_train)
-
-        rmse = np.sqrt(np.mean((Y_train - clf.predict(X_norm))**2))
-        print(f'{sanitized_name} train error: {rmse}')
-        
-        fig, ax = plt.subplots(2, 1, figsize=(10, 10))
-        ax[0].plot(Y_train)
-        ax[1].plot(clf.predict(X_norm))
-        fig.tight_layout()
-        plt.savefig(f'linreg-prediction-{save_name}.pdf')
-        plt.close()
-
-        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-        ax.scatter(clf.predict(X_norm), Y_train)
-        fig.tight_layout()
-        plt.savefig(f'linreg-scatter-{save_name}.pdf')
-        plt.close()
-
-def main_dtrees():
-
-    df_occ = load_csv('ZonePeopleOccupantCount.csv')
-
-    for i in range(1, len(df_occ.columns)):
-
-        sanitized_name = df_occ.columns[i][:-29].upper()
-        save_name = sanitized_name.replace(' ', '')
-        df_train = pd.read_csv(f'{save_name}_train.csv', index_col=0)
-        
-        X_train = df_train.iloc[:,:5].values
-        Y_train = df_train.iloc[:,5].values
-
-        clf = tree.DecisionTreeRegressor(max_depth=4)
-        clf = clf.fit(X_train, Y_train)
-
-        rmse = np.sqrt(np.mean((Y_train - clf.predict(X_train))**2))
-        print(f'{sanitized_name} train error: {rmse}')
-        
-        fig, ax = plt.subplots(2, 1, figsize=(10, 10))
-        ax[0].plot(Y_train)
-        ax[1].plot(clf.predict(X_train))
-        fig.tight_layout()
-        plt.savefig(f'tree-prediction-{save_name}.pdf')
-        plt.close()
-
-        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-        ax.scatter(clf.predict(X_train), Y_train)
-        fig.tight_layout()
-        plt.savefig(f'tree-scatter-{save_name}.pdf')
-        plt.close()
-
-        tree.plot_tree(clf, feature_names=df_train.columns[:6], fontsize=6)
-        plt.savefig(f'tree-struct-{save_name}.pdf')
-        plt.close()
+    pdb.set_trace()
 
 def create_attack_trace(tempdiff):
 
@@ -381,10 +364,10 @@ def attack_models(config):
         plt.ylabel('Relative temperature difference')
         plt.xlabel('Damper Position')
 
-        plt.scatter(df_damper.iloc[19930:19960, i], atk_true, color='red')
+        #plt.scatter(df_damper.iloc[19930:19960, i], atk_true, color='red')
         plt.tight_layout()
         #plt.show()
-        plt.savefig(f'attack-{save_name}.pdf')
+        plt.savefig(f'model-{save_name}.png')
         plt.close()
 
     print(f'Total detected: {np.sum(detect_obj[:, 1] > 0)}')
@@ -399,11 +382,13 @@ def attack_models(config):
 if __name__ == '__main__':
 
     # main_pairwise_models({'exp_name': 'damper-tempdiff'})
-    
-    create_attack_trace(tempdiff=3)
-    attack_models({'exp_name': 'damper-tempdiff'})
-    main_mass_models()
 
-    #process_zone_data()
+    # create_attack_trace(tempdiff=3)
+    #attack_models({'exp_name': 'damper-tempdiff'})
+    # main_mass_models()
+
+    # process_zone_data()
+    main_train_dtrees()
+
     # main_linreg()
 

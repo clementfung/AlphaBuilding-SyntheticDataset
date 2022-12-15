@@ -67,8 +67,8 @@ def explore_graph():
     graph = nx.read_gml('brick-graph.gml')
     node_positions = dict()
 
-    node_positions['MAIN SERVICE WATER LOOP'] = (0.5, 150)
-    node_positions['-MEDIUMOFFICEDETAILED-ASHRAE 169-2006-5A CREATED: 2020-09-29 13:02:54 -0700'] = (1.5, 150)
+    node_positions['-MEDIUMOFFICEDETAILED-ASHRAE 169-2006-5A CREATED: 2020-09-29 13:02:54 -0700'] = (150, 0.5)
+    node_positions['MAIN SERVICE WATER LOOP'] = (150, 1.5)
 
     print('========= LEVEL 1 ======================')
 
@@ -78,7 +78,7 @@ def explore_graph():
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
-        node_positions[sanitized_name] = (0, vpos)
+        node_positions[sanitized_name] = (vpos, 2)
         vpos += 60
 
     print('========= LEVEL 2 ======================')
@@ -89,7 +89,7 @@ def explore_graph():
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
-        node_positions[sanitized_name] = (1, vpos)
+        node_positions[sanitized_name] = (vpos, 1)
         vpos += 2
 
     print('========= LEVEL 3 ======================')
@@ -100,12 +100,14 @@ def explore_graph():
         print(f'For node: {sanitized_name}')
         print(f'Below: {graph[sanitized_name]}')
         print(f'Above: {graph.pred[sanitized_name]}')
-        node_positions[sanitized_name] = (2, vpos)
+        node_positions[sanitized_name] = (vpos, 0)
         vpos += 2
 
     nx.draw(graph, node_positions)
     plt.tight_layout()
-    plt.show()
+    plt.savefig('brick-graph.pdf')
+
+    pdb.set_trace()
 
 def explore_pairwise_damper_relations():
 
